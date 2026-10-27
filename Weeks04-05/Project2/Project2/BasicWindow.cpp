@@ -8,7 +8,32 @@ LPCTSTR lpszWindowName = L"Window Programming Lab"; // 창 제목
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM); // 메시지 처리 함수 선언
 
+constexpr int MaxLines = 10;
+constexpr int MaxColumns = 30;
 
+static void HandleCharacter(WPARAM character, TCHAR (&text)[MaxLines][MaxColumns + 1],
+    int (&lengths)[MaxLines], int& currentLine, int& currentColumn)
+{
+    if (character >= 32 && character <= 126) {
+        if (currentColumn < MaxColumns) {
+            text[currentLine][currentColumn++] = static_cast<TCHAR>(character);
+            text[currentLine][currentColumn] = _T('\0');
+            lengths[currentLine] = currentColumn;
+        }
+    }
+    else if (character == VK_BACK) {
+        if (currentColumn > 0) {
+            text[currentLine][--currentColumn] = _T('\0');
+            lengths[currentLine] = currentColumn;
+        }
+        else if (currentLine > 0) {
+            currentColumn = lengths[--currentLine];
+        }
+    }
+    else if (character == VK_RETURN && currentLine + 1 < MaxLines) {
+        currentColumn = lengths[++currentLine];
+    }
+}
 
 /* ---------------- WinMain ---------------- */
 
@@ -60,11 +85,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) // 
 {
     PAINTSTRUCT ps;                           // WM_PAINT용 구조체
     HDC hDC;                                  // 디바이스 컨텍스트
-    static SIZE size;                         // 문자열 픽셀 길이 저장용 구조체
-    static TCHAR str[10][31];                 // 문자를 입력받을 배열 선언(10줄, 30글자) 
-    static int len[10];                       // i번쨰 줄의 길이
-    static int culcol;                        // 현재 캐럿이 위치한 칸(가로)
-    static int culine;                        // 현재 캐럿이 위치한 줄(세로)
+    SIZE size{};                             // 문자열 픽셀 길이 저장용 구조체
+    static TCHAR str[MaxLines][MaxColumns + 1]; // 10줄, 줄당 30글자와 널 종료 문자
+    static int len[MaxLines];                 // 각 줄의 길이
+    static int currentColumn;                // 현재 캐럿이 위치한 칸(가로)
+    static int currentLine;                  // 현재 캐럿이 위치한 줄(세로)
 
     switch (uMsg) {                           // 메시지 종류에 따라 분기
 
@@ -78,32 +103,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) // 
         InvalidateRect(hWnd, NULL, TRUE);     // 화면 다시 그리기
         break;                                // WM_KEYDOWN 기본 종료
 
-    case WM_CHAR:                             // 일반 문자 입력 처리                   
-        if (wParam >= 32 && wParam <= 126) {    // 출력 가능한 문자만 입력 받겠다.(tab, enter 같은건 입력 받지 않음)
-            
-            if (culcol < 30) {                    //줄에 적힌 글자수가 30보다 작을경우(아직 문자 넣을 공간이 남아있는지 체크)
-                str[culine][culcol++] = (TCHAR)wParam;      // wParam를 입력받아서 str에 저장, 그 후 글자수(len) 1 증가
-                str[culine][culcol] = '\0';                 // // 문자를 입력받아 저장된 후 다음자리에 \0 입력
-            }
-         
-        }
-        if (wParam == VK_BACK) {                 // 백스페이스 입력시 실행
-            if (len > 0) {                       // 글자가 있다면
-                len--;                           // 앞으로 한칸 이동
-                str[len] = '\0';                 // 앞으로 한칸 이동한 곳에 \0 넣어서 문자 제거
-            }
-        }
-
+    case WM_CHAR:                             // ASCII 문자, Enter, Backspace 처리
+        HandleCharacter(wParam, str, len, currentLine, currentColumn);
         InvalidateRect(hWnd, NULL, TRUE);
-        break;                                // WM_CHAR 종료
+        return 0;
 
-    case WM_PAINT:                            // 화면 다시 그리기 메시지
+    case WM_PAINT: {                          // 화면 다시 그리기 메시지
         hDC = BeginPaint(hWnd, &ps);          // 그리기 시작
-        GetTextExtentPoint32(hDC, str, lstrlen(str), &size);
-        TextOut(hDC, 0,0,str, lstrlen(str));
-        SetCaretPos(size.cx, 0);              // 캐럿 위치 설정
+        TEXTMETRIC metrics{};
+        GetTextMetrics(hDC, &metrics);
+        const int lineHeight = metrics.tmHeight + 4;
+        for (int line = 0; line < MaxLines; ++line) {
+            TextOut(hDC, 0, line * lineHeight, str[line], len[line]);
+        }
+        GetTextExtentPoint32(hDC, str[currentLine], currentColumn, &size);
+        SetCaretPos(size.cx, currentLine * lineHeight); // 현재 줄 끝에 캐럿 표시
         EndPaint(hWnd, &ps);                  // 그리기 종료
-        break;                                // 처리 종료
+        return 0;
+    }
 
     case WM_DESTROY:                          // 창이 닫힐 때
         HideCaret(hWnd);                      // 캐럿 숨기기
